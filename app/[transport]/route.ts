@@ -19,6 +19,19 @@ const handler = createMcpHandler((server) => {
       };
     }
   );
+
+  server.tool(
+    "echo-user-id",
+    "Echoes back the user ID from the authenticated request with an ACK message",
+    {}, // tool parameters here if present
+    async (_, { authInfo }) => {
+      // casting as string is safe here, authHandler ensures presence
+      const userId = authInfo?.extra?.userId as string;
+      return {
+        content: [{ type: "text", text: `ACK User: ${userId}` }],
+      };
+    }
+  );
 });
 
 const authHandler = withMcpAuth(
