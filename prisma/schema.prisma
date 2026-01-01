@@ -1,0 +1,125 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x"]
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("POSTGRES_PRISMA_URL")
+  directUrl         = env("POSTGRES_URL_NON_POOLING")
+  // shadowDatabaseUrl removed - only needed for prisma migrate, not prisma db push
+  // If you use migrations, add: shadowDatabaseUrl = env("POSTGRES_SHADOW_URL") (different DB)
+}
+
+model FoodLog {
+  id            String   @id @default(uuid())
+  user_id       String   @default("")
+  food_name     String
+  food_qty      Float
+  protein_grams Float
+  fat_grams     Float
+  carbs_grams   Float
+  kkcals        Float
+  feeding_date  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+}
+
+model FoodReference {
+  id            String   @id @default(uuid())
+  user_id       String   @default("")
+  food_name     String
+  food_qty      Float
+  protein_grams Float
+  fat_grams     Float
+  carbs_grams   Float
+  kkcals        Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+  imageBase64   String
+}
+
+model TargetTotals {
+  id            String @id @default(uuid())
+  user_id       String @default("")
+  feeding_date  String
+  fat_grams     Float
+  carbs_grams   Float
+  protein_grams Float
+  kcals         Float  @default(0)
+}
+
+model TrainingProgram {
+  id            String               @id @default(uuid())
+  user_id          String               @default("")
+  program_name     String
+  start_date       DateTime             @default(now())
+  end_date         DateTime
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @default(now())
+  training_days    TrainingProgramDay[]
+}
+
+model TrainingProgramDay {
+  id              String                       @id @default(uuid())
+  user_id         String                       @default("")
+  day_name        String
+  day_description String
+  day_order_num   Int
+  start_date      DateTime                     @default(now())
+  end_date        DateTime
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @default(now())
+  program_id      String
+  training_grid   Json                         @db.Json
+  program         TrainingProgram              @relation(fields: [program_id], references: [id])
+  exercises       TrainingProgramDayExercise[]
+  log             TrainingProgramDayLog[]
+
+  @@index([program_id])
+}
+
+model TrainingProgramDayExercise {
+  id             String             @id @default(uuid())
+  user_id        String             @default("")
+  program_name   String
+  start_date     DateTime           @default(now())
+  end_date       DateTime
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now())
+  program_day_id String
+  program_day    TrainingProgramDay @relation(fields: [program_day_id], references: [id])
+
+  @@index([program_day_id])
+}
+
+model TrainingProgramDayLog {
+  id             String             @id @default(uuid())
+  user_id        String             @default("")
+  program_name   String
+  start_date     DateTime           @default(now())
+  end_date       DateTime
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now())
+  program_day_id String
+  program_day    TrainingProgramDay @relation(fields: [program_day_id], references: [id])
+
+  @@index([program_day_id])
+}
+
+model ExerciseReference {
+  id            String   @id @default(uuid())
+  user_id       String   @default("")
+  exercise_name String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+}
+
+model UserSettings {
+  id            String   @id @default(uuid())
+  user_id       String   @default("")
+  nickname      String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+}
+
