@@ -266,6 +266,7 @@ const handler = createMcpHandler((server) => {
       },
       required: ["occurredAt", "proteinGrams", "carbsGrams", "fatGrams", "sodiumMg"],
     },
+    // re-push to the server
     async (args, contextOrAuthInfo) => {
       // Debug: Log what we're receiving
       console.log("[log-nutrition] args:", JSON.stringify(args));
