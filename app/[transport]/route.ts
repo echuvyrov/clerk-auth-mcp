@@ -266,29 +266,26 @@ const handler = createMcpHandler((server) => {
       },
       required: ["occurredAt", "proteinGrams", "carbsGrams", "fatGrams", "sodiumMg"],
     },
-    // re-push to the server
     async (args, contextOrAuthInfo) => {
-      // Debug: Log what we're receiving
-      console.log("[log-nutrition] args:", JSON.stringify(args));
-      console.log("[log-nutrition] second param:", contextOrAuthInfo);
-      console.log("[log-nutrition] second param type:", typeof contextOrAuthInfo);
-      console.log("[log-nutrition] second param keys:", contextOrAuthInfo ? Object.keys(contextOrAuthInfo) : "null/undefined");
+      // When tools have parameters, authInfo is passed INSIDE args, not as a second parameter
+      // Extract authInfo from args first, fallback to second parameter for tools without params
+      const argsWithAuth = args as { authInfo?: { extra?: { userId?: string } }; [key: string]: unknown };
+      const authInfo = argsWithAuth.authInfo || (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } })?.authInfo || contextOrAuthInfo as { extra?: { userId?: string } } | undefined;
       
-      // Try to extract authInfo - it might be passed directly or nested in context
-      let authInfo: { extra?: { userId?: string } } | undefined;
-      if (contextOrAuthInfo && 'authInfo' in contextOrAuthInfo) {
-        authInfo = (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } }).authInfo;
-      } else if (contextOrAuthInfo && 'extra' in contextOrAuthInfo) {
-        // Maybe authInfo is passed directly?
-        authInfo = contextOrAuthInfo as { extra?: { userId?: string } };
-      }
-      
-      if (!authInfo) {
-        console.error("[log-nutrition] Missing authInfo. Received:", contextOrAuthInfo);
+      if (!authInfo || !authInfo.extra?.userId) {
         throw new Error("Authentication required. authInfo is missing.");
       }
-      const userId = authInfo.extra?.userId as string;
-      const payload = logNutritionParser.parse(args);
+      const userId = authInfo.extra.userId as string;
+      
+      // Parse only the actual nutrition parameters (exclude authInfo, signal, etc.)
+      const nutritionArgs = { ...argsWithAuth };
+      delete nutritionArgs.authInfo;
+      delete nutritionArgs.signal;
+      delete nutritionArgs.requestId;
+      delete nutritionArgs.requestInfo;
+      delete nutritionArgs._meta;
+      
+      const payload = logNutritionParser.parse(nutritionArgs);
       // const mealTotals = computeMealNutritionTotalsFromLog(payload); // Available if needed for response
 
       // Extract date string from occurredAt (FoodLog.feeding_date is String, not DateTime)
@@ -373,19 +370,24 @@ const handler = createMcpHandler((server) => {
       required: [],
     },
     async (args, contextOrAuthInfo) => {
-      // Try to extract authInfo - it might be passed directly or nested in context
-      let authInfo: { extra?: { userId?: string } } | undefined;
-      if (contextOrAuthInfo && 'authInfo' in contextOrAuthInfo) {
-        authInfo = (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } }).authInfo;
-      } else if (contextOrAuthInfo && 'extra' in contextOrAuthInfo) {
-        authInfo = contextOrAuthInfo as { extra?: { userId?: string } };
-      }
+      // When tools have parameters, authInfo is passed INSIDE args, not as a second parameter
+      const argsWithAuth = args as { authInfo?: { extra?: { userId?: string } }; [key: string]: unknown };
+      const authInfo = argsWithAuth.authInfo || (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } })?.authInfo || contextOrAuthInfo as { extra?: { userId?: string } } | undefined;
       
-      if (!authInfo) {
+      if (!authInfo || !authInfo.extra?.userId) {
         throw new Error("Authentication required. authInfo is missing.");
       }
-      const userId = authInfo.extra?.userId as string;
-      const parsedArgs = getSummaryParser.parse(args);
+      const userId = authInfo.extra.userId as string;
+      
+      // Parse only the actual summary parameters (exclude authInfo, signal, etc.)
+      const summaryArgs = { ...argsWithAuth };
+      delete summaryArgs.authInfo;
+      delete summaryArgs.signal;
+      delete summaryArgs.requestId;
+      delete summaryArgs.requestInfo;
+      delete summaryArgs._meta;
+      
+      const parsedArgs = getSummaryParser.parse(summaryArgs);
       const date =
         parsedArgs.date ?? new Date().toISOString().slice(0, 10); /* YYYY-MM-DD */
 
@@ -517,18 +519,17 @@ const handler = createMcpHandler((server) => {
       required: [],
     },
     async (args, contextOrAuthInfo) => {
-      // Try to extract authInfo - it might be passed directly or nested in context
-      let authInfo: { extra?: { userId?: string } } | undefined;
-      if (contextOrAuthInfo && 'authInfo' in contextOrAuthInfo) {
-        authInfo = (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } }).authInfo;
-      } else if (contextOrAuthInfo && 'extra' in contextOrAuthInfo) {
-        authInfo = contextOrAuthInfo as { extra?: { userId?: string } };
-      }
+      // When tools have parameters, authInfo is passed INSIDE args, not as a second parameter
+      const argsWithAuth = args as { authInfo?: { extra?: { userId?: string } }; [key: string]: unknown };
+      const authInfoRaw = argsWithAuth.authInfo || (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } })?.authInfo || contextOrAuthInfo as { extra?: { userId?: string } } | undefined;
       
-      if (!authInfo) {
+      // Type guard to ensure authInfo has the expected structure
+      const authInfo = authInfoRaw && 'extra' in authInfoRaw ? authInfoRaw as { extra?: { userId?: string } } : undefined;
+      
+      if (!authInfo || !authInfo.extra?.userId) {
         throw new Error("Authentication required. authInfo is missing.");
       }
-      const userId = authInfo.extra?.userId as string;
+      const userId = authInfo.extra.userId as string;
       // const parsedArgs = getSummaryParser.parse(args); // Available if needed
       const today = new Date().toISOString().slice(0, 10);
 
