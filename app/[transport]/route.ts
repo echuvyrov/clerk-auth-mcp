@@ -49,7 +49,153 @@ const getSummaryParser = z.object({
   date: z.string().optional(),
 });
 
-// Tool context type - matches the MCP adapter's RequestHandlerExtra type
+// Well-defined input schemas (matching original cocompetitorai implementation)
+// Note: Removed 'as const' to ensure proper serialization for MCP protocol
+const logWorkoutInputSchema = {
+  type: "object",
+  properties: {
+    occurredAt: {
+      type: "string",
+      description: "ISO timestamp (e.g. 2025-12-18T15:04:05Z).",
+    },
+    sport: {
+      type: "string",
+      description: 'Sport/category, e.g. "run", "bike", "lift", "swim".',
+    },
+    durationMinutes: { type: "number" },
+    distanceKm: { type: "number" },
+    notes: { type: "string" },
+  },
+  required: ["occurredAt", "sport"],
+  additionalProperties: false,
+};
+
+const logNutritionInputSchema = {
+  type: "object",
+  properties: {
+    occurredAt: {
+      type: "string",
+      description: "ISO timestamp (e.g. 2025-12-18T12:00:00Z).",
+    },
+    mealType: {
+      type: "string",
+      description: 'e.g. "breakfast", "lunch", "dinner", "snack".',
+    },
+    calories: { type: "number", description: "Optional calories for the meal." },
+    proteinGrams: {
+      type: "number",
+      description: "Protein in grams for the meal (required).",
+    },
+    carbsGrams: {
+      type: "number",
+      description: "Carbohydrates in grams for the meal (required).",
+    },
+    fatGrams: {
+      type: "number",
+      description: "Fat in grams for the meal (required).",
+    },
+    sodiumMg: {
+      type: "number",
+      description: "Sodium in milligrams for the meal (required).",
+    },
+    saturatedFatGrams: {
+      type: "number",
+      description: "Optional saturated fat in grams for the meal.",
+    },
+    vitamins: {
+      type: "array",
+      description: "Optional vitamins/micros list (name + amount + unit).",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: 'e.g. "Vitamin C".' },
+          amount: { type: "number", description: "Amount (numeric)." },
+          unit: { type: "string", description: 'Unit, e.g. "mg", "mcg", "IU".' },
+        },
+        required: ["name", "amount", "unit"],
+        additionalProperties: false,
+      },
+    },
+    items: {
+      type: "array",
+      description:
+        "Optional per-item breakdown. If provided, items may include macros and sodium; totals still come from the top-level fields.",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          quantity: { type: "number" },
+          unit: { type: "string" },
+          calories: { type: "number" },
+          proteinGrams: {
+            type: "number",
+            description: "Optional protein in grams for this item.",
+          },
+          carbsGrams: {
+            type: "number",
+            description: "Optional carbohydrates in grams for this item.",
+          },
+          fatGrams: { type: "number", description: "Optional fat in grams for this item." },
+          sodiumMg: {
+            type: "number",
+            description: "Optional sodium in milligrams for this item.",
+          },
+          saturatedFatGrams: {
+            type: "number",
+            description: "Optional saturated fat in grams.",
+          },
+          vitamins: {
+            type: "array",
+            description:
+              "Optional vitamins/micros list (name + amount + unit).",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: 'e.g. "Vitamin C".' },
+                amount: { type: "number", description: "Amount (numeric)." },
+                unit: {
+                  type: "string",
+                  description: 'Unit, e.g. "mg", "mcg", "IU".',
+                },
+              },
+              required: ["name", "amount", "unit"],
+              additionalProperties: false,
+            },
+          },
+          nutritionFacts: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string" },
+                value: { type: "string" },
+              },
+              required: ["label", "value"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+    },
+    notes: { type: "string" },
+  },
+  required: ["occurredAt", "proteinGrams", "carbsGrams", "fatGrams", "sodiumMg"],
+  additionalProperties: false,
+};
+
+const getSummaryInputSchema = {
+  type: "object",
+  properties: {
+    date: {
+      type: "string",
+      description: "ISO date (YYYY-MM-DD). Defaults to today.",
+    },
+  },
+  required: [],
+  additionalProperties: false,
+};
 
 const handler = createMcpHandler((server) => {
   // Existing tools
@@ -72,16 +218,66 @@ const handler = createMcpHandler((server) => {
     "Echoes back the user ID from the authenticated request with an ACK message",
     {},
     async (_, context) => {
-      // Debug: Log what we're receiving
-      console.log("[echo-user-id] args:", _);
-      console.log("[echo-user-id] context:", JSON.stringify(context));
-      console.log("[echo-user-id] context type:", typeof context);
-      console.log("[echo-user-id] context keys:", context ? Object.keys(context) : "context is null/undefined");
-      
       const authInfo = context?.authInfo;
       const userId = authInfo?.extra?.userId as string;
       return {
         content: [{ type: "text", text: `ACK User: ${userId}` }],
+      };
+    }
+  );
+
+  // Test tool with a simple parameter to verify MCP Inspector shows input fields
+  // IMPORTANT: Vercel MCP adapter expects Zod schemas, not JSON Schema!
+  server.tool(
+    "echo-user-id-test",
+    "Test tool with a simple parameter to verify schema display",
+    {
+      testMessage: z.string().describe("A test message to echo back along with the user ID"),
+    },
+    async (args, contextOrAuthInfo) => {
+      // When tools have parameters, authInfo is passed INSIDE args
+      const argsWithAuth = args as { authInfo?: { extra?: { userId?: string } }; testMessage?: string; [key: string]: unknown };
+      const authInfo = argsWithAuth.authInfo || (contextOrAuthInfo as { authInfo?: { extra?: { userId?: string } } })?.authInfo || contextOrAuthInfo as { extra?: { userId?: string } } | undefined;
+      
+      if (!authInfo || !authInfo.extra?.userId) {
+        throw new Error("Authentication required. authInfo is missing.");
+      }
+      const userId = authInfo.extra.userId as string;
+      const testMessage = argsWithAuth.testMessage || "No message provided";
+      
+      return {
+        content: [{ type: "text", text: `ACK User: ${userId}, Message: ${testMessage}` }],
+      };
+    }
+  );
+
+  // Test tool with inline schema to verify MCP inspector shows input fields
+  // IMPORTANT: Vercel MCP adapter expects Zod schemas, not JSON Schema!
+  server.tool(
+    "test-schema",
+    "Test tool to verify schema display in MCP inspector",
+    {
+      testField: z.string().describe("A test field to verify schema display"),
+      testNumber: z.number().optional().describe("A test number field"),
+    },
+    async (args) => {
+      return {
+        content: [{ type: "text", text: `Test received: ${JSON.stringify(args)}` }],
+      };
+    }
+  );
+
+  // Minimal test tool matching the exact format from mcp-handler CLI template
+  server.tool(
+    "roll-dice",
+    "Rolls an N-sided die",
+    {
+      sides: z.number().int().min(2),
+    },
+    async ({ sides }) => {
+      const value = 1 + Math.floor(Math.random() * sides);
+      return {
+        content: [{ type: "text", text: `🎲 You rolled a ${value}!` }],
       };
     }
   );
@@ -148,25 +344,16 @@ const handler = createMcpHandler((server) => {
   );
 
   // Tracking tools
+  // IMPORTANT: Vercel MCP adapter expects Zod schemas, not JSON Schema!
   server.tool(
     "log-workout",
     "Log a workout session",
     {
-      type: "object",
-      properties: {
-        occurredAt: {
-          type: "string",
-          description: "ISO timestamp (e.g. 2025-12-18T15:04:05Z).",
-        },
-        sport: {
-          type: "string",
-          description: 'Sport/category, e.g. "run", "bike", "lift", "swim".',
-        },
-        durationMinutes: { type: "number" },
-        distanceKm: { type: "number" },
-        notes: { type: "string" },
-      },
-      required: ["occurredAt", "sport"],
+      occurredAt: z.string().describe("ISO timestamp (e.g. 2025-12-18T15:04:05Z)."),
+      sport: z.string().describe('Sport/category, e.g. "run", "bike", "lift", "swim".'),
+      durationMinutes: z.number().optional(),
+      distanceKm: z.number().optional(),
+      notes: z.string().optional(),
     },
     async (args, context) => {
       // Handle case where context might be undefined (when tool has parameters)
@@ -198,73 +385,49 @@ const handler = createMcpHandler((server) => {
     "log-nutrition",
     "Log nutrition / meal. Requires protein/carbs/fat grams + sodium mg per item. Saturated fat + vitamins are optional.",
     {
-      type: "object",
-      properties: {
-        occurredAt: {
-          type: "string",
-          description: "ISO timestamp (e.g. 2025-12-18T12:00:00Z).",
-        },
-        mealType: {
-          type: "string",
-          description: 'e.g. "breakfast", "lunch", "dinner", "snack".',
-        },
-        calories: { type: "number", description: "Optional calories for the meal." },
-        proteinGrams: {
-          type: "number",
-          description: "Protein in grams for the meal (required).",
-        },
-        carbsGrams: {
-          type: "number",
-          description: "Carbohydrates in grams for the meal (required).",
-        },
-        fatGrams: {
-          type: "number",
-          description: "Fat in grams for the meal (required).",
-        },
-        sodiumMg: {
-          type: "number",
-          description: "Sodium in milligrams for the meal (required).",
-        },
-        saturatedFatGrams: {
-          type: "number",
-          description: "Optional saturated fat in grams for the meal.",
-        },
-        vitamins: {
-          type: "array",
-          description: "Optional vitamins/micros list (name + amount + unit).",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string", description: 'e.g. "Vitamin C".' },
-              amount: { type: "number", description: "Amount (numeric)." },
-              unit: { type: "string", description: 'Unit, e.g. "mg", "mcg", "IU".' },
-            },
-            required: ["name", "amount", "unit"],
-          },
-        },
-        items: {
-          type: "array",
-          description:
-            "Optional per-item breakdown. If provided, items may include macros and sodium; totals still come from the top-level fields.",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              quantity: { type: "number" },
-              unit: { type: "string" },
-              calories: { type: "number" },
-              proteinGrams: { type: "number" },
-              carbsGrams: { type: "number" },
-              fatGrams: { type: "number" },
-              sodiumMg: { type: "number" },
-              saturatedFatGrams: { type: "number" },
-            },
-            required: ["name"],
-          },
-        },
-        notes: { type: "string" },
-      },
-      required: ["occurredAt", "proteinGrams", "carbsGrams", "fatGrams", "sodiumMg"],
+      // IMPORTANT: Vercel MCP adapter expects Zod schemas, not JSON Schema!
+      occurredAt: z.string().describe("ISO timestamp (e.g. 2025-12-18T12:00:00Z)."),
+      mealType: z.string().optional().describe('e.g. "breakfast", "lunch", "dinner", "snack".'),
+      calories: z.number().optional().describe("Optional calories for the meal."),
+      proteinGrams: z.number().describe("Protein in grams for the meal (required)."),
+      carbsGrams: z.number().describe("Carbohydrates in grams for the meal (required)."),
+      fatGrams: z.number().describe("Fat in grams for the meal (required)."),
+      sodiumMg: z.number().describe("Sodium in milligrams for the meal (required)."),
+      saturatedFatGrams: z.number().optional().describe("Optional saturated fat in grams for the meal."),
+      vitamins: z.array(
+        z.object({
+          name: z.string().describe('e.g. "Vitamin C".'),
+          amount: z.number().describe("Amount (numeric)."),
+          unit: z.string().describe('Unit, e.g. "mg", "mcg", "IU".'),
+        })
+      ).optional().describe("Optional vitamins/micros list (name + amount + unit)."),
+      items: z.array(
+        z.object({
+          name: z.string(),
+          quantity: z.number().optional(),
+          unit: z.string().optional(),
+          calories: z.number().optional(),
+          proteinGrams: z.number().optional().describe("Optional protein in grams for this item."),
+          carbsGrams: z.number().optional().describe("Optional carbohydrates in grams for this item."),
+          fatGrams: z.number().optional().describe("Optional fat in grams for this item."),
+          sodiumMg: z.number().optional().describe("Optional sodium in milligrams for this item."),
+          saturatedFatGrams: z.number().optional().describe("Optional saturated fat in grams."),
+          vitamins: z.array(
+            z.object({
+              name: z.string().describe('e.g. "Vitamin C".'),
+              amount: z.number().describe("Amount (numeric)."),
+              unit: z.string().describe('Unit, e.g. "mg", "mcg", "IU".'),
+            })
+          ).optional().describe("Optional vitamins/micros list (name + amount + unit)."),
+          nutritionFacts: z.array(
+            z.object({
+              label: z.string(),
+              value: z.string(),
+            })
+          ).optional(),
+        })
+      ).optional().describe("Optional per-item breakdown. If provided, items may include macros and sodium; totals still come from the top-level fields."),
+      notes: z.string().optional(),
     },
     async (args, contextOrAuthInfo) => {
       // When tools have parameters, authInfo is passed INSIDE args, not as a second parameter
@@ -360,14 +523,7 @@ const handler = createMcpHandler((server) => {
     "get-daily-summary",
     "Get daily training + nutrition summary",
     {
-      type: "object",
-      properties: {
-        date: {
-          type: "string",
-          description: "ISO date (YYYY-MM-DD). Defaults to today.",
-        },
-      },
-      required: [],
+      date: z.string().optional().describe("ISO date (YYYY-MM-DD). Defaults to today."),
     },
     async (args, contextOrAuthInfo) => {
       // When tools have parameters, authInfo is passed INSIDE args, not as a second parameter
@@ -509,14 +665,7 @@ const handler = createMcpHandler((server) => {
     "get-week-summary",
     "Get weekly training + nutrition summary",
     {
-      type: "object",
-      properties: {
-        date: {
-          type: "string",
-          description: "ISO date (YYYY-MM-DD). Defaults to today.",
-        },
-      },
-      required: [],
+      date: z.string().optional().describe("ISO date (YYYY-MM-DD). Defaults to today."),
     },
     async (args, contextOrAuthInfo) => {
       // When tools have parameters, authInfo is passed INSIDE args, not as a second parameter
