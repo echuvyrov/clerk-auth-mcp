@@ -123,3 +123,4 @@ model UserSettings {
   updatedAt     DateTime @default(now())
 }
 
+
