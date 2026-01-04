@@ -167,13 +167,15 @@ function DailyFoodLogWidget() {
 
   useEffect(() => {
     // Get data from window if available (passed from MCP)
-    const widgetData = (window as any).oai?.widget?.props?.data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const windowWithOai = window as typeof window & { oai?: { widget?: { props?: { data?: unknown } } } };
+    const widgetData = windowWithOai.oai?.widget?.props?.data;
     if (widgetData) {
       try {
         const parsed = typeof widgetData === "string" ? JSON.parse(widgetData) : widgetData;
         setData(parsed);
         setLoading(false);
-      } catch (e) {
+      } catch {
         setError("Failed to parse widget data");
         setLoading(false);
       }
