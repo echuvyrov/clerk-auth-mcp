@@ -49,6 +49,32 @@ const getSummaryParser = z.object({
   date: z.string().optional(),
 });
 
+// Widget metadata for daily-food-log
+const dailyFoodLogWidget = {
+  id: "daily-food-log",
+  title: "Daily Food Log",
+  templateUri: "ui://widget/daily-food-log.html",
+  invoking: "Loading daily nutrition data",
+  invoked: "Daily food log ready",
+} as const;
+
+function widgetDescriptorMeta(widget: typeof dailyFoodLogWidget) {
+  return {
+    "openai/outputTemplate": widget.templateUri,
+    "openai/toolInvocation/invoking": widget.invoking,
+    "openai/toolInvocation/invoked": widget.invoked,
+    "openai/widgetAccessible": true,
+    "openai/resultCanProduceWidget": true,
+  } as const;
+}
+
+function widgetInvocationMeta(widget: typeof dailyFoodLogWidget) {
+  return {
+    "openai/toolInvocation/invoking": widget.invoking,
+    "openai/toolInvocation/invoked": widget.invoked,
+  } as const;
+}
+
 const handler = createMcpHandler((server) => {
   // Existing tools
   server.tool(
@@ -1041,17 +1067,19 @@ const handler = createMcpHandler((server) => {
         })),
       };
 
-      // Generate widget HTML with embedded data
+      // Generate widget HTML with embedded data  
       const widgetHtml = generateDailyFoodLogWidgetHtml(widgetData);
 
+      // Return widget response with metadata following pizzaz pattern
       return {
         content: [
           {
             type: "text",
-            text: widgetHtml,
-            mimeType: "text/html",
+            text: `Daily food log for ${date} with ${widgetData.summary.totalItems} items. ${widgetData.summary.totals.calories} calories, ${widgetData.summary.totals.proteinGrams}g protein, ${widgetData.summary.totals.carbsGrams}g carbs, ${widgetData.summary.totals.fatGrams}g fat.`,
           },
         ],
+        structuredContent: widgetData,
+        _meta: widgetInvocationMeta(dailyFoodLogWidget),
       };
     }
   );
